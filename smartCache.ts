@@ -1,32 +1,30 @@
+
 import { Video } from './types';
+import { NativeBridge } from './nativeBridge';
 
-// حجم الجزء الذي سيتم تحميله (2 ميجابايت بالضبط كما طلب)
-const BUFFER_SIZE = 2 * 1024 * 1024; 
-const CACHE_NAME = 'rooh-video-buffer-v1';
+// زيادة حجم التخزين المؤقت لضمان تشغيل سلس للفيديوهات عالية الجودة (5 ميجابايت)
+const BUFFER_SIZE = 5 * 1024 * 1024; 
+const CACHE_NAME = 'rooh-video-ultra-buffer-v2';
 
-// دالة لتخزين فيديو واحد (تستخدم داخل المكونات)
 export const bufferVideoChunk = async (url: string) => {
   if (!url || !url.startsWith('http')) return;
+
+  // إرسال طلب تحميل مسبق للأندرويد إذا كان متاحاً
+  NativeBridge.preload(url);
 
   try {
     const cache = await caches.open(CACHE_NAME);
     const cachedResponse = await cache.match(url);
 
-    // إذا كان الفيديو موجوداً بالفعل، لا داعي لإعادة تحميله
     if (cachedResponse) return;
 
-    // طلب أول 2 ميجا بايت فقط
     const response = await fetch(url, {
-        headers: {
-            'Range': `bytes=0-${BUFFER_SIZE}`
-        },
+        headers: { 'Range': `bytes=0-${BUFFER_SIZE}` },
         mode: 'cors' 
     });
 
     if (response.ok || response.status === 206) {
         const blob = await response.blob();
-        // تخزين الاستجابة في الكاش لتستخدمها عناصر <video> تلقائياً
-        // نستخدم استجابة جديدة كاملة لتجنب مشاكل Range لاحقاً عند التشغيل الكامل
         const newResponse = new Response(blob, {
             status: 200,
             headers: response.headers
@@ -34,18 +32,16 @@ export const bufferVideoChunk = async (url: string) => {
         await cache.put(url, newResponse);
     }
   } catch (e) {
-    // تجاهل الأخطاء الصامتة (مثل انقطاع النت)
+    // خطأ صامت لعدم إزعاج المستخدم
   }
 };
 
-// الدالة الجماعية (لأول مجموعة عند فتح التطبيق)
 export const initSmartBuffering = async (videos: Video[]) => {
   if (!navigator.onLine || !videos || videos.length === 0) return;
 
-  // التركيز على أول 8 فيديوهات لضمان سرعة الواجهة
-  const queue = [...videos].slice(0, 8); 
+  // تحميل أول 10 فيديوهات في القائمة لضمان "Zero Latency" أثناء التمرير
+  const queue = [...videos].slice(0, 10); 
 
-  // تنفيذ التحميل بالتوازي
   queue.forEach(video => {
       if (video.video_url) {
           bufferVideoChunk(video.video_url);
